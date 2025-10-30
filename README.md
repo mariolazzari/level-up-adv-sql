@@ -338,8 +338,142 @@ WHERE
 
 ## Windowing functions
 
+Use to partition query results for analysis
+
 ### Ranking
 
 ```sql
+-- For each sales person rank the car models they've sold most
+-- First join the tables to get the necessary data
+SELECT
+  emp.firstName,
+  emp.lastName,
+  mdl.model,
+  sls.salesId
+FROM
+  sales sls
+  INNER JOIN employee emp ON sls.employeeId = emp.employeeId
+  INNER JOIN inventory inv ON inv.inventoryId = sls.inventoryId
+  INNER JOIN model mdl ON mdl.modelId = inv.modelId
+  -- apply the grouping
+SELECT
+  emp.firstName,
+  emp.lastName,
+  mdl.model,
+  count(model) AS NumberSold
+FROM
+  sales sls
+  INNER JOIN employee emp ON sls.employeeId = emp.employeeId
+  INNER JOIN inventory inv ON inv.inventoryId = sls.inventoryId
+  INNER JOIN model mdl ON mdl.modelId = inv.modelId
+GROUP BY
+  emp.firstName,
+  emp.lastName,
+  mdl.model
+  -- add in the windowing function
+SELECT
+  emp.firstName,
+  emp.lastName,
+  mdl.model,
+  count(model) AS NumberSold,
+  rank() OVER (
+    PARTITION BY
+      sls.employeeId
+    ORDER BY
+      count(model) desc
+  ) AS Rank
+FROM
+  sales sls
+  INNER JOIN employee emp ON sls.employeeId = emp.employeeId
+  INNER JOIN inventory inv ON inv.inventoryId = sls.inventoryId
+  INNER JOIN model mdl ON mdl.modelId = inv.modelId
+GROUP BY
+  emp.firstName,
+  emp.lastName,
+  mdl.model
+```
 
+### Sales per month with annual total
+
+```sql
+-- Create a report showing sales per month and an annual total
+-- get the needed data
+SELECT
+  strftime ('%Y', soldDate) AS soldYear,
+  strftime ('%m', soldDate) AS soldMonth,
+  salesAmount
+FROM
+  sales
+  -- apply the grouping
+SELECT
+  strftime ('%Y', soldDate) AS soldYear,
+  strftime ('%m', soldDate) AS soldMonth,
+  SUM(salesAmount) AS salesAmount
+FROM
+  sales
+GROUP BY
+  soldYear,
+  soldMonth
+ORDER BY
+  soldYear,
+  soldMonth
+  -- add the window function - simplify with cte
+with
+  cte_sales as (
+    SELECT
+      strftime ('%Y', soldDate) AS soldYear,
+      strftime ('%m', soldDate) AS soldMonth,
+      SUM(salesAmount) AS salesAmount
+    FROM
+      sales
+    GROUP BY
+      soldYear,
+      soldMonth
+  )
+SELECT
+  soldYear,
+  soldMonth,
+  salesAmount,
+  SUM(salesAmount) OVER (
+    PARTITION BY
+      soldYear
+    ORDER BY
+      soldYear,
+      soldMonth
+  ) AS AnnualSales_RunningTotal
+FROM
+  cte_sales
+ORDER BY
+  soldYear,
+  soldMonth
+```
+
+### Cars sold per month
+
+```sql
+-- Displays the number of cars sold this month, and last month
+-- Get the data
+SELECT
+  strftime ('%Y-%m', soldDate) AS MonthSold,
+  COUNT(*) AS NumberCarsSold
+FROM
+  sales
+GROUP BY
+  strftime ('%Y-%m', soldDate)
+  -- Apply the window function
+SELECT
+  strftime ('%Y-%m', soldDate) AS MonthSold,
+  COUNT(*) AS NumberCarsSold,
+  LAG (COUNT(*), 1, 0) OVER calMonth AS LastMonthCarsSold
+FROM
+  sales
+GROUP BY
+  strftime ('%Y-%m', soldDate)
+WINDOW
+  calMonth AS (
+    ORDER BY
+      strftime ('%Y-%m', soldDate)
+  )
+ORDER BY
+  strftime ('%Y-%m', soldDate)
 ```
